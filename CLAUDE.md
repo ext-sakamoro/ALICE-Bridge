@@ -16,6 +16,11 @@ Part of the ALICE ecosystem.
 - `src/device/` — Device abstraction (actuator types, manager, mapping)
 - `src/safety/` — Safety layer (limiter, emergency stop, ramp)
 - `src/bridge/` — Real-time signal processing bridge
+- `src/sensor.rs` — Sensor feedback input (pressure, temperature, acceleration, etc.)
+- `src/feedback.rs` — Closed-loop PID control with anti-windup, deadband
+- `src/distributed.rs` — Distributed bridge node management, message routing
+- `src/script.rs` — Recording/playback scripting with loop, speed control
+- `src/ble.rs` — BLE GATT protocol adapter, device scanning
 
 ## Key Traits
 - `Protocol` — Pluggable transport backend (connect, scan, scalar/linear/rotate_cmd, stop)
@@ -33,7 +38,7 @@ Part of the ALICE ecosystem.
 | Metric | Value |
 |--------|-------|
 | clippy (pedantic+nursery) | 0 warnings |
-| Tests | 108 |
+| Tests | 262 |
 | fmt | clean |
 
 ## Dependencies
