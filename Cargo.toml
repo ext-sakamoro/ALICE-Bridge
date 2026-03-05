@@ -1,0 +1,39 @@
+[package]
+name = "alice-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Universal hardware bridge — protocol-agnostic device communication layer"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ext-sakamoro/ALICE-Bridge"
+keywords = ["hardware", "iot", "bridge", "protocol", "device"]
+categories = ["hardware-support", "network-programming"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+# Protocol backends (optional)
+tokio-tungstenite = { version = "0.26", optional = true, features = ["native-tls"] }
+futures-util = { version = "0.3", optional = true }
+rumqttc = { version = "0.24", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
+[features]
+default = ["websocket", "mqtt", "rest"]
+websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
+mqtt = ["dep:rumqttc"]
+rest = ["dep:reqwest"]
+full = ["websocket", "mqtt", "rest"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
