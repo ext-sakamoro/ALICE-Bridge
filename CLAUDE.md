@@ -38,7 +38,7 @@ Part of the ALICE ecosystem.
 | Metric | Value |
 |--------|-------|
 | clippy (pedantic+nursery) | 0 warnings |
-| Tests | 262 |
+| Tests | 256 |
 | fmt | clean |
 
 ## Dependencies
