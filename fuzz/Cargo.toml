@@ -1,0 +1,41 @@
+[package]
+name = "alice-bridge-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.alice-bridge]
+path = ".."
+
+# cargo-machete false-positive 予防 (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
+# libfuzzer-sys は fuzz_target! macro 内でのみ参照されるため machete が誤検知
+[package.metadata.cargo-machete]
+ignored = ["libfuzzer-sys"]
+
+# 攻撃者制御 (source_name, intensity, now) で SignalBridge が panic せず終端する
+[[bin]]
+name = "fuzz_message_forward"
+path = "fuzz_targets/fuzz_message_forward.rs"
+doc = false
+
+# 攻撃者制御 (hard_cap, intensity 列) で IntensityLimiter が panic せず終端する
+[[bin]]
+name = "fuzz_protocol_translate"
+path = "fuzz_targets/fuzz_protocol_translate.rs"
+doc = false
+
+# 攻撃者制御 (node_id, device_id, command, payload) で NodeRegistry routing が panic せず終端する
+[[bin]]
+name = "fuzz_route_lookup"
+path = "fuzz_targets/fuzz_route_lookup.rs"
+doc = false
+
+[workspace]
+members = ["."]
