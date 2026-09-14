@@ -217,7 +217,7 @@ impl BleManager {
     #[must_use]
     pub fn scan_results_sorted(&self) -> Vec<&ScanEntry> {
         let mut sorted: Vec<&ScanEntry> = self.scan_results.iter().collect();
-        sorted.sort_by(|a, b| b.rssi.cmp(&a.rssi));
+        sorted.sort_by_key(|d| core::cmp::Reverse(d.rssi));
         sorted
     }
 
