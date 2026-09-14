@@ -18,7 +18,7 @@ tracing = "0.1"
 # Protocol backends (optional)
 tokio-tungstenite = { version = "0.26", optional = true, features = ["native-tls"] }
 futures-util = { version = "0.3", optional = true }
-rumqttc = { version = "0.24", optional = true }
+rumqttc = { version = "0.25", optional = true, default-features = false }  # 1883 平文のみ、TLS backend (rustls-webpki 0.102 advisory 4 件) を引かない
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
 [dev-dependencies]
