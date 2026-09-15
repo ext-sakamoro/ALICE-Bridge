@@ -1,5 +1,12 @@
 name: CI
 
+# canonical CI template: [[reference_alice_ci_canonical_template]] 手順 4.5 / 4.6
+# 2026-09-15 強化 (それまで fmt + actionlint のみで test / clippy / doc は CI 未実行):
+# - test / clippy `--all-targets` (pedantic 0 件なので `-D warnings` gate) / doc を default + no-default で
+# - msrv job: `rust-version = "1.88"` (reqwest → icu 2.3 の要求) を `cargo +1.88 check` で実 compile (罠 #27)
+# - feature-powerset: {websocket, mqtt, rest} depth 2
+# - sibling path dep なし (alice-stubs は no-op)、no_std claim なし (tokio)
+
 on:
   push:
     branches: [main]
@@ -8,8 +15,58 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (default = websocket + mqtt + rest)
+        run: cargo test
+      - name: Test (no default features)
+        run: cargo test --no-default-features
+
+  clippy:
+    name: Clippy (all targets, pedantic, -D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (default features)
+        run: cargo clippy --all-targets -- -W clippy::pedantic -D warnings
+      - name: Clippy (no default features)
+        run: cargo clippy --no-default-features --all-targets -- -W clippy::pedantic -D warnings
+
+  msrv:
+    name: MSRV (rust-version = 1.88 実 compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # 宣言値と同じ toolchain: Cargo.toml の rust-version を bump したら同 commit で @<version> も更新
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (all features)
+        run: cargo check --lib --all-features
+
+  feature-powerset:
+    name: Feature powerset (cargo-hack, depth 2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      - name: Powerset ({websocket, mqtt, rest} depth 2)
+        run: cargo hack check --lib --feature-powerset --depth 2
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -21,6 +78,18 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  doc:
+    name: Doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Doc
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
@@ -31,4 +100,3 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
-

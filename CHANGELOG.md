@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `rust-version = "1.88"` (reqwest → icu 2.3 の要求、`cargo +1.88 check` green / 1.87 は deps で拒否)
+- `ci.yml`: fmt + actionlint のみ → test (default + no-default) / clippy `--all-targets` pedantic `-D warnings` 2 variant / `msrv` 1.88 / `feature-powerset` (depth 2) / doc `-D warnings`、rust-cache
+
+### Fixed
+- clippy pedantic 3 件 (test の `assert!(a == b)` → `assert_eq!`)
+
 ## [0.1.0] - 2026-03-05
 
 ### Added

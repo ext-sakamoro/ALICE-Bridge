@@ -251,9 +251,9 @@ mod tests {
         let mut pid = PidController::new(0.5, PidConfig::default());
         pid.update(0.0, 0.1);
         pid.update(0.1, 0.1);
-        assert!(pid.update_count() == 2);
+        assert_eq!(pid.update_count(), 2);
         pid.reset();
-        assert!(pid.update_count() == 0);
+        assert_eq!(pid.update_count(), 0);
         assert!((pid.output() - 0.0).abs() < 1e-15);
     }
 
@@ -332,7 +332,7 @@ mod tests {
         let mut fc = FeedbackController::new("test", 0.5, PidConfig::default());
         fc.process(0.0, 0.1);
         fc.reset();
-        assert!(fc.pid.update_count() == 0);
+        assert_eq!(fc.pid.update_count(), 0);
     }
 
     #[test]
