@@ -99,9 +99,16 @@ ALICE-Bridge is a component of the [ALICE Ecosystem](https://github.com/ext-saka
 
 ## License
 
-**Dual License: AGPL-3.0 + Commercial**
+`AGPL-3.0-or-later OR LicenseRef-Commercial` — dual-licensed. Pick either.
 
-- **Open Source (AGPL-3.0)**: Free for personal use, hobby projects, VRChat communities, and any project that complies with AGPL-3.0 (full source disclosure).
-- **Commercial License**: If your organization cannot comply with AGPL-3.0 (e.g., proprietary embedded systems, closed-source cloud services, robotics), contact us for a commercial license.
+| Option | Terms | Use it when |
+|--------|-------|-------------|
+| **AGPL-3.0-or-later** | [LICENSE-AGPL](LICENSE-AGPL) — free, no reporting obligation | Your project is itself AGPL-compatible open source, or you are only using it internally |
+| **Commercial License** | [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) — paid, removes the copyleft | Closed-source product, proprietary SaaS, edge / firmware distribution, plugin redistribution, or a platform NDA that forbids source disclosure |
 
-See [LICENSE](LICENSE) for the full AGPL-3.0 text.
+AGPL is a strong copyleft: a product, firmware image, or service that links
+`alice-bridge` and is distributed or served to users must be released under the AGPL
+as well. That is intentional for the open ecosystem, and the Commercial
+License exists for the cases where it is not something you are able to do.
+
+Commercial licence enquiries: <contact@extoria.co.jp>
