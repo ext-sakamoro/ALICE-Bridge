@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Security
+- tokio を 1.53.3 に上げる (RUSTSEC-2026-0386、`AsyncFd` の unsound、1.53.3 で修正) Cargo.lock の変更は tokio の版と checksum だけ
 - rustls を 0.23.46、rustls-webpki を 0.103.16 に上げる (RUSTSEC-2026-0346 / 0347 / 0348 / 0349、RUSTSEC-2026-0382) Cargo.lock の変更は 2 package の版と checksum だけ `deny.toml` から rustls 系の ignore 5 件 (RUSTSEC-2025-0134 / RUSTSEC-2026-0049 / 0098 / 0099 / 0104) を外す
 
 ### Changed
