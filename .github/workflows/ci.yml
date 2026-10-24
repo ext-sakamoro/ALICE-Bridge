@@ -5,7 +5,7 @@ name: CI
 # - test / clippy `--all-targets` (pedantic 0 件なので `-D warnings` gate) / doc を default + no-default で
 # - msrv job: `rust-version = "1.88"` (reqwest → icu 2.3 の要求) を `cargo +1.88 check` で実 compile (罠 #27)
 # - feature-powerset: {websocket, mqtt, rest} depth 2
-# - sibling path dep なし (alice-stubs は no-op)、no_std claim なし (tokio)
+# - sibling path dep なし、no_std claim なし (tokio)
 
 on:
   push:

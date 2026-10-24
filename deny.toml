@@ -5,7 +5,7 @@
 # ALICE-SDF v1.7.7 (commit 52d26f9) の deny.toml を base に ALICE-Bridge 用に調整
 #
 # ALICE-Bridge は AGPL-3.0-or-later のため自己 exception 必須 (下部 [[licenses.exceptions]])
-# sibling path dep は 0 (alice-stubs は no-op)
+# sibling path dep は 0
 
 [graph]
 all-features = false
