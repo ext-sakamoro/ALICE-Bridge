@@ -82,7 +82,7 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 # ALICE-Bridge 自己 exception (AGPL-3.0-or-later は allow-list 外だが自プロジェクトのみ許可)
 [[licenses.exceptions]]
 name = "alice-bridge"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 
 # ---------------------------------------------------------------------------
 # Bans (banned crate / duplicate / wildcard)
