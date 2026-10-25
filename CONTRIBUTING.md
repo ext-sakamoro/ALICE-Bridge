@@ -29,4 +29,4 @@ cargo clippy --all-features -- -D warnings
 - All public APIs must have doc comments
 - Safety-critical code must have unit tests
 - No `unwrap()` in library code (use `?` or explicit error handling)
-- Follow ALICE quality standards (see ALICE-KARIKARI.md)
+- Run `scripts/preflight.sh` before pushing

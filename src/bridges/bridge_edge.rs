@@ -194,7 +194,7 @@ mod tests {
         let desc = EdgeDeviceDescriptor {
             node_id: "esp32-001".into(),
             protocol_hint: "mqtt".into(),
-            endpoint: "192.168.1.100:1883".into(),
+            endpoint: "192.0.2.100:1883".into(),
             actuator_types: vec![ActuatorType::Vibrate],
             max_update_rate_hz: 50,
         };
