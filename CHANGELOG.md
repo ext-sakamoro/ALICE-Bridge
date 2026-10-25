@@ -8,7 +8,7 @@
 - rustls を 0.23.46、rustls-webpki を 0.103.16 に上げる (RUSTSEC-2026-0346 / 0347 / 0348 / 0349、RUSTSEC-2026-0382) Cargo.lock の変更は 2 package の版と checksum だけ `deny.toml` から rustls 系の ignore 5 件 (RUSTSEC-2025-0134 / RUSTSEC-2026-0049 / 0098 / 0099 / 0104) を外す
 
 ### Changed
-- Licence: `AGPL-3.0-or-later OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
+- Licence: `AGPL-3.0-or-later` → `LicenseRef-Proprietary`
 - CI: `ci.yml` と `security-audit.yml` を `ci/**` の branch でも走らせ (main に入れる前に同じ検査を通す)、`ci.yml` は手動実行もでき、main 以外の古い run は打ち切る
 
 ### Added
