@@ -8,8 +8,8 @@
 - rustls を 0.23.46、rustls-webpki を 0.103.16 に上げる (RUSTSEC-2026-0346 / 0347 / 0348 / 0349、RUSTSEC-2026-0382) Cargo.lock の変更は 2 package の版と checksum だけ `deny.toml` から rustls 系の ignore 5 件 (RUSTSEC-2025-0134 / RUSTSEC-2026-0049 / 0098 / 0099 / 0104) を外す
 
 ### Changed
+- Licence: `AGPL-3.0-or-later OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
 - CI: `ci.yml` と `security-audit.yml` を `ci/**` の branch でも走らせ (main に入れる前に同じ検査を通す)、`ci.yml` は手動実行もでき、main 以外の古い run は打ち切る
-- **License: `AGPL-3.0-or-later` → `AGPL-3.0-or-later OR LicenseRef-Commercial` (dual-licensed、2026-09-27)** AGPL 側の条件は変更なし (既存 AGPL 利用者への影響ゼロ)、商用という選択肢が追加されただけ SPDX が AGPL 単独だと cargo-deny / FOSSA / SBOM に「商用オプションなし」と見えるため宣言を dual に 変更点: SPDX / `LICENSE` → `LICENSE-AGPL` / `LICENSE-COMMERCIAL.md` (商用トリガー 6 条件 = クローズド製品・商用 SaaS・エッジ / ファームウェア配布・plugin 再配布・プラットフォーム NDA・保証、社内利用は AGPL 側で無償と明記) / README の選択肢表 商用窓口は法人 `contact@extoria.co.jp`
 
 ### Added
 - `rust-version = "1.88"` (reqwest → icu 2.3 の要求、`cargo +1.88 check` green / 1.87 は deps で拒否)
