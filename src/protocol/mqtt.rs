@@ -1,7 +1,7 @@
 //! MQTT protocol adapter for IoT/ESP32/Arduino haptic devices.
 //!
 //! Publishes JSON commands to configurable topics, enabling custom hardware
-//! (ESP32, Arduino, Raspberry Pi) to receive control signals over MQTT.
+//! (ESP32, Arduino, ARM64 single-board computers) to receive control signals over MQTT.
 
 use std::future::Future;
 use std::pin::Pin;

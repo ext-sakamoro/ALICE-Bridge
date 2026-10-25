@@ -40,7 +40,7 @@ Hardware (750+ devices)
 | Protocol | Transport | Use Case |
 |----------|-----------|----------|
 | **Buttplug.io** | WebSocket | 750+ consumer haptic devices via Intiface Central |
-| **MQTT** | TCP | IoT devices (ESP32, Arduino, Raspberry Pi) |
+| **MQTT** | TCP | IoT devices (ESP32, Arduino, ARM64 single-board computers) |
 | **REST** | HTTP | Devices with REST APIs (The Handy v2, etc.) |
 | **OSC** | UDP | VRChat, TouchDesigner, audio/visual apps |
 | **WebSocket** | WebSocket | Custom firmware with WS servers |
