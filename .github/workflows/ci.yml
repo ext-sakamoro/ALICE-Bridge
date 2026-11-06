@@ -32,6 +32,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test (default = websocket + mqtt + rest)
         run: cargo test
+      # without overflow checks and with fast paths a float bound can differ between the profiles
+      - name: Test (signal limits, release profile)
+        run: cargo test --release --test signal_limits
       - name: Test (no default features)
         run: cargo test --no-default-features
 

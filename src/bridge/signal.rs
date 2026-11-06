@@ -25,6 +25,33 @@ struct InputSource {
     active: bool,
 }
 
+/// Why a value was refused. Nothing changed when it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SignalError {
+    /// `min_position` and `max_position` are not finite, `min > max`, or the width overflows `f64`.
+    InvalidRange,
+    /// The speed limit is `NaN` or negative (`+inf` is no limit).
+    InvalidSpeedLimit,
+    /// A weight is not finite or is negative.
+    InvalidWeight,
+    /// An intensity or a time is not finite.
+    NotFinite,
+}
+
+impl core::fmt::Display for SignalError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidRange => "invalid position range",
+            Self::InvalidSpeedLimit => "invalid speed limit",
+            Self::InvalidWeight => "invalid weight",
+            Self::NotFinite => "a value or time is not finite",
+        })
+    }
+}
+
+impl std::error::Error for SignalError {}
+
 /// Real-time signal processor between input sources and device output.
 ///
 /// Supports any number of named input sources with configurable weights.
@@ -44,15 +71,23 @@ pub struct SignalBridge {
 }
 
 impl SignalBridge {
-    #[must_use]
+    /// # Errors
+    ///
+    /// [`SignalError::InvalidRange`] or [`SignalError::InvalidSpeedLimit`].
     pub fn new(
         smooth_window: usize,
         speed_limit: f64,
         min_position: f64,
         max_position: f64,
         output_interval_ms: u32,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SignalError> {
+        if !(min_position <= max_position && (max_position - min_position).is_finite()) {
+            return Err(SignalError::InvalidRange);
+        }
+        if speed_limit.is_nan() || speed_limit < 0.0 {
+            return Err(SignalError::InvalidSpeedLimit);
+        }
+        Ok(Self {
             sources: Vec::new(),
             smooth_window: smooth_window.max(1),
             speed_limit,
@@ -63,22 +98,42 @@ impl SignalBridge {
             last_tick: 0.0,
             tick_count: 0,
             stale_threshold: 0.5,
-        }
+        })
     }
 
     /// Register a named input source with a weight.
-    pub fn add_source(&mut self, name: &str, weight: f64) {
+    ///
+    /// # Errors
+    ///
+    /// [`SignalError::InvalidWeight`] for a weight that is not finite or is negative.
+    pub fn add_source(&mut self, name: &str, weight: f64) -> Result<(), SignalError> {
+        if !weight.is_finite() || weight < 0.0 {
+            return Err(SignalError::InvalidWeight);
+        }
         self.sources.push(InputSource {
             name: name.to_string(),
             buffer: VecDeque::with_capacity(self.smooth_window),
-            weight: weight.max(0.0),
+            weight,
             last_update: 0.0,
             active: false,
         });
+        Ok(())
     }
 
-    /// Update a named input source with a new value.
-    pub fn update(&mut self, source_name: &str, intensity: f64, now_secs: f64) {
+    /// Update a named input source with a new value. A name no source has changes nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`SignalError::NotFinite`] for an intensity or a time that is not finite.
+    pub fn update(
+        &mut self,
+        source_name: &str,
+        intensity: f64,
+        now_secs: f64,
+    ) -> Result<(), SignalError> {
+        if !intensity.is_finite() || !now_secs.is_finite() {
+            return Err(SignalError::NotFinite);
+        }
         for src in &mut self.sources {
             if src.name == source_name {
                 let clamped = intensity.clamp(0.0, 1.0);
@@ -88,13 +143,21 @@ impl SignalBridge {
                 src.buffer.push_back(clamped);
                 src.active = true;
                 src.last_update = now_secs;
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
-    /// Generate the next device action.
-    pub fn tick(&mut self, now_secs: f64) -> BridgeAction {
+    /// Generate the next device action. The position is finite and within the range.
+    ///
+    /// # Errors
+    ///
+    /// [`SignalError::NotFinite`] for a time that is not finite.
+    pub fn tick(&mut self, now_secs: f64) -> Result<BridgeAction, SignalError> {
+        if !now_secs.is_finite() {
+            return Err(SignalError::NotFinite);
+        }
         let dt = if self.last_tick > 0.0 {
             now_secs - self.last_tick
         } else {
@@ -130,30 +193,45 @@ impl SignalBridge {
         self.last_position = target;
         self.tick_count += 1;
 
-        BridgeAction {
+        Ok(BridgeAction {
             position: target,
             duration_ms: self.output_interval_ms,
             timestamp: now_secs,
-        }
+        })
     }
 
     fn compute_fused(&self) -> f64 {
+        let (weighted_sum, total_weight) = self.weighted_totals(1.0);
+        if total_weight < 1e-10 {
+            return 0.0;
+        }
+        if total_weight.is_finite() {
+            return weighted_sum / total_weight;
+        }
+        // Finite weights can overflow their sum, and x / inf would read as 0. The mean does not
+        // depend on the scale of the weights, so it is taken again relative to the largest.
+        let largest = self
+            .sources
+            .iter()
+            .filter(|s| s.active && !s.buffer.is_empty())
+            .fold(0.0, |m: f64, s| m.max(s.weight));
+        let (weighted_sum, total_weight) = self.weighted_totals(1.0 / largest);
+        weighted_sum / total_weight
+    }
+
+    /// The sum of weight * smoothed value and the sum of weights, over sources with a value
+    fn weighted_totals(&self, scale: f64) -> (f64, f64) {
         let mut weighted_sum = 0.0;
         let mut total_weight = 0.0;
-
         for src in &self.sources {
             if !src.active || src.buffer.is_empty() {
                 continue;
             }
-            let smoothed = weighted_average(&src.buffer);
-            weighted_sum += src.weight * smoothed;
-            total_weight += src.weight;
+            let weight = src.weight * scale;
+            weighted_sum += weight * weighted_average(&src.buffer);
+            total_weight += weight;
         }
-
-        if total_weight < 1e-10 {
-            return 0.0;
-        }
-        weighted_sum / total_weight
+        (weighted_sum, total_weight)
     }
 
     #[must_use]
@@ -198,53 +276,53 @@ mod tests {
 
     #[test]
     fn single_source() {
-        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("osc", 1.0);
+        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("osc", 1.0).unwrap();
 
-        bridge.update("osc", 0.8, 0.0);
-        let action = bridge.tick(0.0);
+        bridge.update("osc", 0.8, 0.0).unwrap();
+        let action = bridge.tick(0.0).unwrap();
         assert!(action.position > 0.0);
     }
 
     #[test]
     fn weighted_fusion() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("a", 0.6);
-        bridge.add_source("b", 0.4);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("a", 0.6).unwrap();
+        bridge.add_source("b", 0.4).unwrap();
 
-        bridge.update("a", 1.0, 0.0);
-        bridge.update("b", 0.0, 0.0);
-        let action = bridge.tick(0.0);
+        bridge.update("a", 1.0, 0.0).unwrap();
+        bridge.update("b", 0.0, 0.0).unwrap();
+        let action = bridge.tick(0.0).unwrap();
         // Fused: (0.6 * 1.0 + 0.4 * 0.0) / (0.6 + 0.4) = 0.6
         assert!((action.position - 0.6).abs() < 0.1);
     }
 
     #[test]
     fn speed_limit() {
-        let mut bridge = SignalBridge::new(1, 1.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
+        let mut bridge = SignalBridge::new(1, 1.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
 
         // Start at 0.5
-        bridge.update("src", 0.5, 1.0);
-        bridge.tick(1.0);
+        bridge.update("src", 0.5, 1.0).unwrap();
+        bridge.tick(1.0).unwrap();
 
         // Jump to 1.0 — speed limit should cap the delta
-        bridge.update("src", 1.0, 1.1);
-        let action = bridge.tick(1.1);
+        bridge.update("src", 1.0, 1.1).unwrap();
+        let action = bridge.tick(1.1).unwrap();
         // Max delta = 1.0 * 0.1 = 0.1 from 0.5 → capped at 0.6
         assert!(action.position <= 0.61);
     }
 
     #[test]
     fn stale_source_ignored() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("osc", 1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("osc", 1.0).unwrap();
 
-        bridge.update("osc", 0.8, 1.0);
-        bridge.tick(1.0);
+        bridge.update("osc", 0.8, 1.0).unwrap();
+        bridge.tick(1.0).unwrap();
 
         // Tick at t=2.0 — source is stale (>0.5s since last update at 1.0)
-        let action = bridge.tick(2.0);
+        let action = bridge.tick(2.0).unwrap();
         // No active sources → fused = 0.0, speed-limited toward 0.0
         assert!(action.position < 0.8);
     }
@@ -274,115 +352,115 @@ mod tests {
 
     #[test]
     fn no_sources_returns_zero() {
-        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50);
-        let action = bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50).unwrap();
+        let action = bridge.tick(1.0).unwrap();
         // No sources → fused = 0.0
         assert!((action.position - 0.0).abs() < 0.5 + 1e-6);
     }
 
     #[test]
     fn position_clamped_to_range() {
-        let mut bridge = SignalBridge::new(1, 10000.0, 0.2, 0.8, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", 1.0, 1.0);
-        let action = bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 10000.0, 0.2, 0.8, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", 1.0, 1.0).unwrap();
+        let action = bridge.tick(1.0).unwrap();
         assert!(action.position <= 0.8 + 1e-6);
         assert!(action.position >= 0.2 - 1e-6);
     }
 
     #[test]
     fn input_clamped_to_0_1() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", 2.0, 1.0); // should be clamped to 1.0
-        let action = bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", 2.0, 1.0).unwrap(); // should be clamped to 1.0
+        let action = bridge.tick(1.0).unwrap();
         assert!(action.position <= 1.0 + 1e-6);
     }
 
     #[test]
     fn negative_input_clamped() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", -1.0, 1.0); // should be clamped to 0.0
-        let action = bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", -1.0, 1.0).unwrap(); // should be clamped to 0.0
+        let action = bridge.tick(1.0).unwrap();
         assert!(action.position >= 0.0 - 1e-6);
     }
 
     #[test]
     fn large_speed_limit_no_restriction() {
-        let mut bridge = SignalBridge::new(1, 100_000.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", 0.0, 1.0);
-        bridge.tick(1.0);
-        bridge.update("src", 1.0, 1.1);
-        let action = bridge.tick(1.1);
+        let mut bridge = SignalBridge::new(1, 100_000.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", 0.0, 1.0).unwrap();
+        bridge.tick(1.0).unwrap();
+        bridge.update("src", 1.0, 1.1).unwrap();
+        let action = bridge.tick(1.1).unwrap();
         // With huge speed limit, should reach target
         assert!((action.position - 1.0).abs() < 0.01);
     }
 
     #[test]
     fn tick_count_increments() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
         assert_eq!(bridge.tick_count(), 0);
-        bridge.tick(1.0);
+        bridge.tick(1.0).unwrap();
         assert_eq!(bridge.tick_count(), 1);
-        bridge.tick(1.1);
+        bridge.tick(1.1).unwrap();
         assert_eq!(bridge.tick_count(), 2);
     }
 
     #[test]
     fn last_position_tracks() {
-        let mut bridge = SignalBridge::new(1, 10000.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", 0.7, 1.0);
-        bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 10000.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", 0.7, 1.0).unwrap();
+        bridge.tick(1.0).unwrap();
         assert!((bridge.last_position() - 0.7).abs() < 0.01);
     }
 
     #[test]
     fn update_unknown_source_ignored() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("osc", 1.0);
-        bridge.update("nonexistent", 0.8, 1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("osc", 1.0).unwrap();
+        bridge.update("nonexistent", 0.8, 1.0).unwrap();
         let active = bridge.active_sources();
         assert!(active.is_empty());
     }
 
     #[test]
     fn active_sources_after_stale() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("a", 1.0);
-        bridge.add_source("b", 1.0);
-        bridge.update("a", 0.5, 1.0);
-        bridge.update("b", 0.5, 1.0);
-        bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("a", 1.0).unwrap();
+        bridge.add_source("b", 1.0).unwrap();
+        bridge.update("a", 0.5, 1.0).unwrap();
+        bridge.update("b", 0.5, 1.0).unwrap();
+        bridge.tick(1.0).unwrap();
         assert_eq!(bridge.active_sources().len(), 2);
         // Only update "a" — "b" goes stale
-        bridge.update("a", 0.5, 2.0);
-        bridge.tick(2.0);
+        bridge.update("a", 0.5, 2.0).unwrap();
+        bridge.tick(2.0).unwrap();
         assert_eq!(bridge.active_sources().len(), 1);
         assert_eq!(bridge.active_sources()[0], "a");
     }
 
     #[test]
     fn bridge_action_fields() {
-        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
-        bridge.update("src", 0.5, 1.0);
-        let action = bridge.tick(1.0);
+        let mut bridge = SignalBridge::new(1, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
+        bridge.update("src", 0.5, 1.0).unwrap();
+        let action = bridge.tick(1.0).unwrap();
         assert_eq!(action.duration_ms, 50);
         assert!((action.timestamp - 1.0).abs() < 1e-6);
     }
 
     #[test]
     fn smoothing_with_multiple_updates() {
-        let mut bridge = SignalBridge::new(3, 10000.0, 0.0, 1.0, 50);
-        bridge.add_source("src", 1.0);
+        let mut bridge = SignalBridge::new(3, 10000.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("src", 1.0).unwrap();
         // Push 3 values: 0.0, 0.5, 1.0
-        bridge.update("src", 0.0, 1.0);
-        bridge.update("src", 0.5, 1.0);
-        bridge.update("src", 1.0, 1.0);
-        let action = bridge.tick(1.0);
+        bridge.update("src", 0.0, 1.0).unwrap();
+        bridge.update("src", 0.5, 1.0).unwrap();
+        bridge.update("src", 1.0, 1.0).unwrap();
+        let action = bridge.tick(1.0).unwrap();
         // Weighted average: (1*0.0 + 2*0.5 + 3*1.0) / (1+2+3) = 4.0/6.0 ≈ 0.6667
         assert!((action.position - 0.6667).abs() < 0.01);
     }

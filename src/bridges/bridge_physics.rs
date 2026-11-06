@@ -3,7 +3,7 @@
 //! Converts collision forces and impulses into haptic device commands.
 //! Deterministic Fix128 physics → f64 intensity for actuators.
 
-use crate::bridge::SignalBridge;
+use crate::bridge::{SignalBridge, SignalError};
 use crate::device::ActuatorType;
 
 /// Physics collision event for haptic feedback.
@@ -83,15 +83,19 @@ pub fn force_to_haptic_intensity(desc: &ForceHapticDescriptor, max_force: f64) -
 }
 
 /// Feed a collision event into a `SignalBridge` as a "physics" source.
+///
+/// # Errors
+///
+/// As [`SignalBridge::update`], for an intensity or a time that is not finite.
 #[inline]
 pub fn feed_collision_to_signal_bridge(
     bridge: &mut SignalBridge,
     event: &CollisionHapticEvent,
     max_impulse: f64,
     now_secs: f64,
-) {
+) -> Result<(), SignalError> {
     let intensity = collision_to_haptic_intensity(event, max_impulse);
-    bridge.update("physics", intensity, now_secs);
+    bridge.update("physics", intensity, now_secs)
 }
 
 #[cfg(test)]
@@ -174,11 +178,11 @@ mod tests {
 
     #[test]
     fn feed_collision_updates_bridge() {
-        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50);
-        bridge.add_source("physics", 1.0);
+        let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50).unwrap();
+        bridge.add_source("physics", 1.0).unwrap();
         let event = make_event(80.0, 5.0);
-        feed_collision_to_signal_bridge(&mut bridge, &event, 100.0, 1.0);
-        let action = bridge.tick(1.0);
+        feed_collision_to_signal_bridge(&mut bridge, &event, 100.0, 1.0).unwrap();
+        let action = bridge.tick(1.0).unwrap();
         assert!(action.position > 0.0);
     }
 }

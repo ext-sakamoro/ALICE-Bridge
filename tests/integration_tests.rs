@@ -96,18 +96,18 @@ fn multi_mapper_with_delay() {
 
 #[test]
 fn signal_bridge_multi_source() {
-    let mut bridge = SignalBridge::new(3, 500.0, 0.0, 1.0, 50);
-    bridge.add_source("osc", 0.6);
-    bridge.add_source("capture", 0.4);
+    let mut bridge = SignalBridge::new(3, 500.0, 0.0, 1.0, 50).unwrap();
+    bridge.add_source("osc", 0.6).unwrap();
+    bridge.add_source("capture", 0.4).unwrap();
 
     // Feed both sources
     for i in 0..5 {
         let t = f64::from(i) * 0.033;
-        bridge.update("osc", 0.8, t);
-        bridge.update("capture", 0.4, t);
+        bridge.update("osc", 0.8, t).unwrap();
+        bridge.update("capture", 0.4, t).unwrap();
     }
 
-    let action = bridge.tick(0.2);
+    let action = bridge.tick(0.2).unwrap();
     assert!(action.position > 0.0);
     assert!(action.position <= 1.0);
     assert_eq!(bridge.active_sources().len(), 2);
@@ -173,8 +173,8 @@ fn end_to_end_pipeline() {
     // Setup
     let mut ramp = GradualRamp::new(2.0, RampCurve::EaseInOut);
     let mut limiter = IntensityLimiter::new(0.95, Some(0.8), 0.3);
-    let mut bridge = SignalBridge::new(3, 500.0, 0.0, 1.0, 50);
-    bridge.add_source("input", 1.0);
+    let mut bridge = SignalBridge::new(3, 500.0, 0.0, 1.0, 50).unwrap();
+    bridge.add_source("input", 1.0).unwrap();
     let mut mapper = MultiMapper::new();
     mapper.add(DeviceMapping {
         device_id: "dev:0".into(),
@@ -201,8 +201,8 @@ fn end_to_end_pipeline() {
         let capped = limiter.apply(ramped);
 
         // Signal bridge
-        bridge.update("input", capped, t);
-        let action = bridge.tick(t);
+        bridge.update("input", capped, t).unwrap();
+        let action = bridge.tick(t).unwrap();
 
         // Device mapping
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]

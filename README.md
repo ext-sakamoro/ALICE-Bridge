@@ -75,13 +75,13 @@ let estop = EmergencyStop::new();
 estop.arm();
 
 // Create signal bridge
-let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50);
-bridge.add_source("osc", 0.6);
-bridge.add_source("capture", 0.4);
+let mut bridge = SignalBridge::new(5, 500.0, 0.0, 1.0, 50)?;
+bridge.add_source("osc", 0.6)?;
+bridge.add_source("capture", 0.4)?;
 
 // Process input
-bridge.update("osc", 0.8, now);
-let action = bridge.tick(now);
+bridge.update("osc", 0.8, now)?;
+let action = bridge.tick(now)?;
 let safe_intensity = limiter.apply(action.position);
 ```
 

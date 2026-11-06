@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Breaks the refusals of `SignalBridge` one way at a time; tests/signal_limits.rs must go red.
+
+usage: python3 scripts/signal_mutants.py
+exit 0 if every mutant applied, compiled and made a test report FAILED; exit 1 otherwise.
+
+Run by hand when src/bridge/signal.rs changes. A mutant that does not compile or no longer applies
+counts against the result. A mutant past the time limit is killed with its process group and counts
+as red. The file is restored after each mutant.
+"""
+import os
+import re
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = ROOT / "src" / "bridge" / "signal.rs"
+COMMAND = ["cargo", "test", "--test", "signal_limits"]
+FAILED = re.compile(r"^test .* \.\.\. .*FAILED|signal: \d+", re.M)
+TIMEOUT_SECS = 300
+
+RANGE = "if !(min_position <= max_position && (max_position - min_position).is_finite()) {"
+# (what breaks, old text, new text)
+MUTANTS = [
+    ("no range check", RANGE, "if false {"),
+    ("a reversed range allowed", RANGE, "if !(max_position - min_position).is_finite() {"),
+    ("the width not checked", RANGE, "if !(min_position <= max_position) {"),
+    ("NaN speed allowed", "if speed_limit.is_nan() || speed_limit < 0.0 {", "if speed_limit < 0.0 {"),
+    ("negative speed allowed", "if speed_limit.is_nan() || speed_limit < 0.0 {", "if speed_limit.is_nan() {"),
+    ("+inf speed refused", "if speed_limit.is_nan() || speed_limit < 0.0 {", "if !speed_limit.is_finite() || speed_limit < 0.0 {"),
+    ("a weight that is not finite allowed", "if !weight.is_finite() || weight < 0.0 {", "if weight < 0.0 {"),
+    ("a negative weight allowed", "if !weight.is_finite() || weight < 0.0 {", "if !weight.is_finite() {"),
+    ("a NaN intensity kept", "if !intensity.is_finite() || !now_secs.is_finite() {", "if !now_secs.is_finite() {"),
+    ("a NaN time kept in update", "if !intensity.is_finite() || !now_secs.is_finite() {", "if !intensity.is_finite() {"),
+    ("a NaN time kept in tick", "        if !now_secs.is_finite() {\n            return Err(SignalError::NotFinite);\n        }\n        let dt", "        let dt"),
+    ("weights not rescaled when their sum overflows", "if total_weight.is_finite() {", "if true {"),
+    ("rescaled by the wrong weight", ".fold(0.0, |m: f64, s| m.max(s.weight));", ".fold(f64::MAX, |m: f64, s| m.min(s.weight));"),
+    ("the output not clamped", "        target = target.clamp(self.min_position, self.max_position);\n", ""),
+]
+
+
+def run_tests() -> tuple[int | None, str]:
+    p = subprocess.Popen(
+        COMMAND, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        start_new_session=True,
+    )
+    try:
+        out, _ = p.communicate(timeout=TIMEOUT_SECS)
+        return p.returncode, out
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        out, _ = p.communicate()
+        return None, out
+
+
+def main() -> int:
+    if sys.argv[1:]:
+        print(__doc__, file=sys.stderr)
+        return 2
+    original = SOURCE.read_text(encoding="utf-8")
+    bad = []
+    try:
+        for name, old, new in MUTANTS:
+            if original.count(old) != 1:
+                bad.append(name)
+                print(f"NOT APPLIED  {name}", flush=True)
+                continue
+            SOURCE.write_text(original.replace(old, new), encoding="utf-8")
+            rc, output = run_tests()
+            if "could not compile" in output:
+                bad.append(name)
+                print(f"BROKEN       {name}", flush=True)
+            elif rc is None:
+                print(f"red (killed) {name}", flush=True)
+            elif rc != 0 and FAILED.search(output):
+                print(f"red          {name}", flush=True)
+            else:
+                bad.append(name)
+                print(f"SURVIVED     {name} (rc {rc})", flush=True)
+    finally:
+        SOURCE.write_text(original, encoding="utf-8")
+    print(f"{len(MUTANTS) - len(bad)} of {len(MUTANTS)} red")
+    return 1 if bad or not MUTANTS else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
