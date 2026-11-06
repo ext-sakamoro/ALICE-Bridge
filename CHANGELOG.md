@@ -20,6 +20,7 @@
 - `ci.yml`: fmt + actionlint のみ → test (default + no-default) / clippy `--all-targets` pedantic `-D warnings` 2 variant / `msrv` 1.88 / `feature-powerset` (depth 2) / doc `-D warnings`、rust-cache
 
 ### Fixed
+- `SignalBridge`: `add_source` が smoothing window の分を先に確保していたので、大きい window で panic か abort していた 確保は値が入る時に行う
 - `SignalBridge`: weight の合計があふれると融合値が 0 になり最小位置へ動いていた 合計があふれた時は最大の weight を基準に取り直し、加重平均を返す
 - clippy pedantic 3 件 (test の `assert!(a == b)` → `assert_eq!`)
 

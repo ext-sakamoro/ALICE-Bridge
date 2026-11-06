@@ -119,6 +119,45 @@ fn weights_of_far_apart_sizes_with_an_overflowing_sum_still_give_the_weighted_me
     assert_eq!(b.tick(1.0).unwrap().position.to_bits(), 8.0_f64.to_bits());
 }
 
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn a_smoothing_window_of_any_size_costs_nothing_until_it_fills() {
+    // oracle: a window larger than the values given averages the values given
+    for window in [1usize << 44, 1usize << 61, usize::MAX] {
+        let mut b = SignalBridge::new(window, INF, 0.0, 8.0, 20).unwrap();
+        b.add_source("s", 1.0).unwrap();
+        b.update("s", 0.5, 1.0).unwrap();
+        assert_eq!(
+            b.tick(1.0).unwrap().position.to_bits(),
+            4.0_f64.to_bits(),
+            "{window}"
+        );
+    }
+}
+
+#[test]
+fn the_speed_limit_holds_every_tick_in_both_directions() {
+    // oracle: at 2 per second, a quarter of a second moves 0.5 whichever way the target is
+    let mut b = SignalBridge::new(1, 2.0, 0.0, 10.0, 20).unwrap();
+    b.add_source("s", 1.0).unwrap();
+    let mut step = |value: f64, t: f64| {
+        b.update("s", value, t).unwrap();
+        b.tick(t).unwrap().position
+    };
+    assert_eq!(step(1.0, 1.0).to_bits(), 10.0_f64.to_bits());
+    assert_eq!(step(0.0, 1.25).to_bits(), 9.5_f64.to_bits());
+    assert_eq!(step(0.0, 1.5).to_bits(), 9.0_f64.to_bits());
+    assert_eq!(step(1.0, 1.75).to_bits(), 9.5_f64.to_bits());
+}
+
+#[test]
+fn a_refused_value_does_not_make_a_source_active() {
+    let mut b = SignalBridge::new(1, INF, 0.0, 10.0, 20).unwrap();
+    b.add_source("s", 1.0).unwrap();
+    assert_eq!(b.update("s", NAN, 1.0), Err(NotFinite));
+    assert!(b.active_sources().is_empty());
+}
+
 /// A fixed sequence (splitmix64), so every run compares the same inputs.
 struct Rng(u64);
 

@@ -112,7 +112,7 @@ impl SignalBridge {
         }
         self.sources.push(InputSource {
             name: name.to_string(),
-            buffer: VecDeque::with_capacity(self.smooth_window),
+            buffer: VecDeque::new(),
             weight,
             last_update: 0.0,
             active: false,

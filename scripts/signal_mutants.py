@@ -37,6 +37,11 @@ MUTANTS = [
     ("a NaN time kept in tick", "        if !now_secs.is_finite() {\n            return Err(SignalError::NotFinite);\n        }\n        let dt", "        let dt"),
     ("weights not rescaled when their sum overflows", "if total_weight.is_finite() {", "if true {"),
     ("rescaled by the wrong weight", ".fold(0.0, |m: f64, s| m.max(s.weight));", ".fold(f64::MAX, |m: f64, s| m.min(s.weight));"),
+    ("the window preallocated", "buffer: VecDeque::new(),", "buffer: VecDeque::with_capacity(self.smooth_window),"),
+    ("the speed limit direction flipped", "let sign = if delta > 0.0 { 1.0 } else { -1.0 };", "let sign = if delta > 0.0 { -1.0 } else { 1.0 };"),
+    ("no speed limit", "if delta.abs() > max_delta {", "if false {"),
+    ("the limit moves twice as far", "let max_delta = self.speed_limit * dt;", "let max_delta = self.speed_limit * dt * 2.0;"),
+    ("a refused value marks the source active", "        if !intensity.is_finite() || !now_secs.is_finite() {\n            return Err(SignalError::NotFinite);\n        }\n        for src in &mut self.sources {", "        if !intensity.is_finite() || !now_secs.is_finite() {\n            for src in &mut self.sources {\n                if src.name == source_name {\n                    src.active = true;\n                }\n            }\n            return Err(SignalError::NotFinite);\n        }\n        for src in &mut self.sources {"),
     ("the output not clamped", "        target = target.clamp(self.min_position, self.max_position);\n", ""),
 ]
 
