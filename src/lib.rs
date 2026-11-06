@@ -42,7 +42,7 @@ pub mod script;
 pub mod sensor;
 
 pub use ble::{BleDevice, BleManager, BleState, GattCharacteristic};
-pub use bridge::SignalBridge;
+pub use bridge::{SignalBridge, SignalError};
 pub use device::{Actuator, ActuatorType, Device, DeviceId, DeviceManager, DeviceMapping};
 pub use distributed::{NodeInfo, NodeRegistry, NodeStatus, RouteMessage};
 pub use feedback::{FeedbackController, PidConfig, PidController};

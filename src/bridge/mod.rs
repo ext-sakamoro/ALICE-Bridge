@@ -2,4 +2,4 @@
 
 mod signal;
 
-pub use signal::{BridgeAction, SignalBridge};
+pub use signal::{BridgeAction, SignalBridge, SignalError};

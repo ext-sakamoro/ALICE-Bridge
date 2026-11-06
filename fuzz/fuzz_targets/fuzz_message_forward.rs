@@ -3,7 +3,8 @@
 //!
 //! 攻撃者制御の (source_name, weight, intensity, now_secs) 列で SignalBridge を組み立て、
 //! `update` / `tick` / `active_sources` が panic せず終端することを検証。
-//! NaN / Inf / 負の時間 / 過大 weight でも定義域 (min_position..=max_position) を逸脱しない。
+//! NaN / Inf / 負の時間 / 過大 weight は入口で断るか、断られなければ定義域
+//! (min_position..=max_position) を逸脱しない。
 
 use alice_bridge::SignalBridge;
 use arbitrary::{Arbitrary, Unstructured};
@@ -52,13 +53,15 @@ fuzz_target!(|data: &[u8]| {
     let min_pos = f64::from_bits(input.min_pos_bits);
     let max_pos = f64::from_bits(input.max_pos_bits);
 
-    let mut bridge = SignalBridge::new(
+    let Ok(mut bridge) = SignalBridge::new(
         smooth_window,
         speed_limit,
         min_pos,
         max_pos,
         input.output_interval_ms,
-    );
+    ) else {
+        return;
+    };
 
     for op in &input.ops {
         match op {
@@ -66,7 +69,7 @@ fuzz_target!(|data: &[u8]| {
                 if name.len() > 256 {
                     continue;
                 }
-                bridge.add_source(name, f64::from_bits(*weight_bits));
+                let _ = bridge.add_source(name, f64::from_bits(*weight_bits));
             }
             Op::Update {
                 source_name,
@@ -76,17 +79,17 @@ fuzz_target!(|data: &[u8]| {
                 if source_name.len() > 256 {
                     continue;
                 }
-                bridge.update(
+                let _ = bridge.update(
                     source_name,
                     f64::from_bits(*intensity_bits),
                     f64::from_bits(*now_bits),
                 );
             }
             Op::Tick { now_bits } => {
-                let action = bridge.tick(f64::from_bits(*now_bits));
-                let _ = action.position;
-                let _ = action.duration_ms;
-                let _ = action.timestamp;
+                if let Ok(action) = bridge.tick(f64::from_bits(*now_bits)) {
+                    let p = action.position;
+                    assert!(p.is_finite() && min_pos <= p && p <= max_pos, "{p}");
+                }
             }
             Op::ActiveSources => {
                 let _ = bridge.active_sources();
