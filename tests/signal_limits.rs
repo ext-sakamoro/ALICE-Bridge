@@ -6,6 +6,11 @@
 //! there would be the output from then on. So the door refuses these, and for every sequence of
 //! accepted calls the position is finite and in the range.
 
+#![allow(
+    clippy::float_cmp,
+    reason = "the positions are exact: the limit times whole seconds, and powers of two"
+)]
+
 use alice_bridge::{SignalBridge, SignalError};
 use SignalError::{InvalidRange, InvalidSpeedLimit, InvalidWeight, NotFinite};
 
@@ -240,4 +245,133 @@ fn ordinary_use_is_as_it_was() {
     assert_eq!(action.position.to_bits(), 25.0_f64.to_bits());
     assert_eq!(action.duration_ms, 20);
     assert_eq!(b.active_sources(), vec!["s"]);
+}
+
+/// A bridge with one source and no smoothing, ticked once at `start` with the source at 0, so it
+/// stands at `min`.
+fn standing_at_zero(speed_limit: f64, start: f64) -> SignalBridge {
+    let mut b = SignalBridge::new(1, speed_limit, 0.0, 100.0, 1).unwrap();
+    b.add_source("s", 1.0).unwrap();
+    b.update("s", 0.0, start).unwrap();
+    b.tick(start).unwrap();
+    assert_eq!(b.last_position(), 0.0);
+    b
+}
+
+/// The position after the source says `value` at `now`, so it is not stale at that tick
+fn tick_towards(b: &mut SignalBridge, value: f64, now: f64) -> f64 {
+    b.update("s", value, now).unwrap();
+    b.tick(now).unwrap().position
+}
+
+// oracle for the three below: a limit of L per second moves at most L * (time that has passed), and
+// time that has not passed moves nothing
+#[test]
+fn time_that_goes_back_or_stands_still_moves_nothing() {
+    for start in [10.0, 0.0, -5.0] {
+        let mut b = standing_at_zero(1.0, start);
+        // the same time, and earlier times, whether or not the clock reads above zero
+        for now in [start, start - 1.0, start - 3.0] {
+            assert_eq!(
+                tick_towards(&mut b, 1.0, now),
+                0.0,
+                "start {start} now {now}"
+            );
+        }
+        // from a position inside the range too, where a step back would show
+        let mut mid = standing_at_zero(1.0, start);
+        assert_eq!(
+            tick_towards(&mut mid, 1.0, start + 50.0),
+            50.0,
+            "start {start}"
+        );
+        assert_eq!(
+            tick_towards(&mut mid, 1.0, start + 47.0),
+            50.0,
+            "start {start}"
+        );
+        // going back gave no time to spend: only time past the latest one counts
+        assert_eq!(tick_towards(&mut b, 1.0, start + 0.5), 0.5, "start {start}");
+        assert_eq!(tick_towards(&mut b, 1.0, start + 2.0), 2.0, "start {start}");
+    }
+}
+
+#[test]
+fn the_limit_holds_in_both_directions() {
+    let mut b = standing_at_zero(1.0, 1.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 51.0), 50.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 53.0), 48.0);
+}
+
+#[test]
+fn a_limit_of_zero_never_moves_and_an_infinite_one_always_may() {
+    let mut b = standing_at_zero(0.0, 1.0);
+    // the difference of these times is infinite, and 0 * inf must not read as no limit
+    for now in [2.0, f64::MAX, -f64::MAX, f64::MAX] {
+        assert_eq!(tick_towards(&mut b, 1.0, now), 0.0, "{now}");
+    }
+    // the first time is far enough back that the difference is infinite
+    let mut b = standing_at_zero(0.0, -f64::MAX);
+    assert_eq!(tick_towards(&mut b, 1.0, f64::MAX), 0.0);
+    let mut b = standing_at_zero(INF, 1.0);
+    // no time has passed, and inf * 0 must not read as a limit
+    assert_eq!(tick_towards(&mut b, 1.0, 1.0), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 0.5), 0.0);
+}
+
+#[test]
+fn the_first_tick_has_no_time_to_measure_and_goes_to_the_target() {
+    // no earlier tick means no known speed, whatever the clock reads
+    for start in [1.0, 0.0, -1.0] {
+        let mut b = SignalBridge::new(1, 0.0, 0.0, 100.0, 1).unwrap();
+        b.add_source("s", 1.0).unwrap();
+        assert_eq!(tick_towards(&mut b, 1.0, start), 100.0, "{start}");
+    }
+}
+
+#[test]
+fn the_scale_of_the_weights_does_not_change_the_mean() {
+    // oracle: a weighted mean is the same when every weight is multiplied by a constant. Weights
+    // [1, 3] with values [1, 0] give 1/4 at every scale that holds the ratio exactly: powers of two
+    let mean = |scale: f64| {
+        let mut b = SignalBridge::new(4, INF, 0.0, 1.0, 1).unwrap();
+        // in two steps, since 2^1030 on its way to 2^-1030 would overflow
+        let scale = scale * 2f64.powi(-1000);
+        b.add_source("a", scale).unwrap();
+        b.add_source("b", 3.0 * scale).unwrap();
+        b.update("a", 1.0, 1.0).unwrap();
+        b.update("b", 0.0, 1.0).unwrap();
+        b.tick(1.0).unwrap().position
+    };
+    for exp in [2000, 1967, 1960, 1000, 978, 970, 928, 1999] {
+        assert_eq!(mean(2f64.powi(exp - 1000)), 0.25, "2^{}", exp - 2000);
+    }
+    // one source alone, at the values the old cut-off turned to 0, and the smallest there is
+    for w in [1e-9, 1e-10, 1e-11, 1e-300, f64::MIN_POSITIVE, 5e-324] {
+        let mut b = SignalBridge::new(4, INF, 0.0, 1.0, 1).unwrap();
+        b.add_source("a", w).unwrap();
+        b.update("a", 0.75, 1.0).unwrap();
+        assert_eq!(b.tick(1.0).unwrap().position, 0.75, "{w:e}");
+    }
+}
+
+#[test]
+fn only_weights_of_exactly_zero_leave_nothing_to_average() {
+    let mut b = SignalBridge::new(4, INF, 2.0, 3.0, 1).unwrap();
+    b.add_source("a", 0.0).unwrap();
+    b.update("a", 1.0, 1.0).unwrap();
+    assert_eq!(b.tick(1.0).unwrap().position, 2.0);
+}
+
+#[test]
+fn a_refused_update_changes_nothing() {
+    let mut b = SignalBridge::new(4, INF, 0.0, 1.0, 2).unwrap();
+    b.add_source("s", 1.0).unwrap();
+    b.update("s", 0.5, 1.0).unwrap();
+    for (value, time) in [(NAN, 1.0), (INF, 1.0), (0.9, NAN), (0.9, INF)] {
+        assert_eq!(b.update("s", value, time), Err(NotFinite), "{value} {time}");
+    }
+    // neither the buffer nor the time of the source moved
+    assert_eq!(b.tick(1.0).unwrap().position, 0.5);
+    assert_eq!(b.active_sources(), ["s"]);
 }

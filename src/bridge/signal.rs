@@ -64,7 +64,7 @@ pub struct SignalBridge {
     max_position: f64,
     output_interval_ms: u32,
     last_position: f64,
-    last_tick: f64,
+    last_tick: Option<f64>,
     tick_count: u64,
     /// Staleness threshold in seconds.
     stale_threshold: f64,
@@ -95,7 +95,7 @@ impl SignalBridge {
             max_position,
             output_interval_ms,
             last_position: f64::midpoint(min_position, max_position),
-            last_tick: 0.0,
+            last_tick: None,
             tick_count: 0,
             stale_threshold: 0.5,
         })
@@ -151,6 +151,10 @@ impl SignalBridge {
 
     /// Generate the next device action. The position is finite and within the range.
     ///
+    /// The position moves at most `speed_limit` for each second past the latest tick, so a time
+    /// that stands still or goes back moves nothing. The first tick has no time to measure a speed
+    /// over and goes to the target; an infinite limit always does.
+    ///
     /// # Errors
     ///
     /// [`SignalError::NotFinite`] for a time that is not finite.
@@ -158,12 +162,13 @@ impl SignalBridge {
         if !now_secs.is_finite() {
             return Err(SignalError::NotFinite);
         }
-        let dt = if self.last_tick > 0.0 {
-            now_secs - self.last_tick
-        } else {
-            0.0
-        };
-        self.last_tick = now_secs;
+        // no earlier tick: no time to measure a speed over. Time past the latest tick is the only
+        // time there is to spend, and it is clamped since the difference of two finite times can
+        // be infinite
+        let elapsed = self
+            .last_tick
+            .map(|last| (now_secs - last).clamp(0.0, f64::MAX));
+        self.last_tick = Some(self.last_tick.map_or(now_secs, |last| last.max(now_secs)));
 
         // Mark stale sources
         for src in &mut self.sources {
@@ -180,7 +185,8 @@ impl SignalBridge {
         let mut target = raw.mul_add(range, self.min_position);
 
         // Speed limiting
-        if dt > 0.0 {
+        if let Some(dt) = elapsed {
+            // an infinite limit with no time passed is NaN, which no delta is above: no limit
             let max_delta = self.speed_limit * dt;
             let delta = target - self.last_position;
             if delta.abs() > max_delta {
@@ -201,33 +207,34 @@ impl SignalBridge {
     }
 
     fn compute_fused(&self) -> f64 {
-        let (weighted_sum, total_weight) = self.weighted_totals(1.0);
-        if total_weight < 1e-10 {
-            return 0.0;
-        }
-        if total_weight.is_finite() {
-            return weighted_sum / total_weight;
-        }
-        // Finite weights can overflow their sum, and x / inf would read as 0. The mean does not
-        // depend on the scale of the weights, so it is taken again relative to the largest.
         let largest = self
             .sources
             .iter()
             .filter(|s| s.active && !s.buffer.is_empty())
             .fold(0.0, |m: f64, s| m.max(s.weight));
-        let (weighted_sum, total_weight) = self.weighted_totals(1.0 / largest);
+        if largest == 0.0 {
+            return 0.0;
+        }
+        let (weighted_sum, total_weight) = self.weighted_totals(1.0);
+        if total_weight.is_normal() {
+            return weighted_sum / total_weight;
+        }
+        // Finite weights can overflow their sum (x / inf would read as 0) or be too small for the
+        // products to keep their digits. The mean does not depend on the scale of the weights, so
+        // it is taken again relative to the largest.
+        let (weighted_sum, total_weight) = self.weighted_totals(largest);
         weighted_sum / total_weight
     }
 
     /// The sum of weight * smoothed value and the sum of weights, over sources with a value
-    fn weighted_totals(&self, scale: f64) -> (f64, f64) {
+    fn weighted_totals(&self, divisor: f64) -> (f64, f64) {
         let mut weighted_sum = 0.0;
         let mut total_weight = 0.0;
         for src in &self.sources {
             if !src.active || src.buffer.is_empty() {
                 continue;
             }
-            let weight = src.weight * scale;
+            let weight = src.weight / divisor;
             weighted_sum += weight * weighted_average(&src.buffer);
             total_weight += weight;
         }
