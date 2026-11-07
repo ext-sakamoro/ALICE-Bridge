@@ -2,4 +2,4 @@
 
 mod signal;
 
-pub use signal::{BridgeAction, SignalBridge, SignalError};
+pub use signal::{BridgeAction, SignalBridge, SignalError, STALE_THRESHOLD_SECS};

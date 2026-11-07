@@ -24,6 +24,8 @@ TIMEOUT_SECS = 300
 RANGE = "if !(min_position <= max_position && (max_position - min_position).is_finite()) {"
 # (what breaks, old text, new text)
 MUTANTS = [
+    ("no cap on the time a tick spends", ".clamp(0.0, self.stale_threshold)", ".clamp(0.0, f64::MAX)"),
+    ("the cap twice as long", ".clamp(0.0, self.stale_threshold)", ".clamp(0.0, 2.0 * self.stale_threshold)"),
     ("no range check", RANGE, "if false {"),
     ("a reversed range allowed", RANGE, "if !(max_position - min_position).is_finite() {"),
     ("the width not checked", RANGE, "if !(min_position <= max_position) {"),
@@ -42,10 +44,9 @@ MUTANTS = [
     ("rescaled the wrong way", "let weight = src.weight / divisor;", "let weight = src.weight * divisor;"),
     ("staleness measured from the highest time", "        self.last_tick = Some(now_secs);\n\n        // Mark stale sources\n        for src in &mut self.sources {\n            if now_secs - src.last_update > self.stale_threshold {", "        self.last_tick = Some(self.last_tick.map_or(now_secs, |l| l.max(now_secs)));\n\n        // Mark stale sources\n        for src in &mut self.sources {\n            if self.last_tick.unwrap_or(now_secs) - src.last_update > self.stale_threshold {"),
     ("the highest time is kept", "self.last_tick = Some(now_secs);", "self.last_tick = Some(self.last_tick.map_or(now_secs, |last| last.max(now_secs)));"),
-    ("time that goes back counts", ".clamp(0.0, f64::MAX)", ".clamp(f64::MIN, f64::MAX)"),
-    ("time that goes back counts by its size", "(now_secs - last).clamp(0.0, f64::MAX)", "(now_secs - last).abs().min(f64::MAX)"),
-    ("an infinite difference of times stays infinite", ".clamp(0.0, f64::MAX)", ".max(0.0)"),
-    ("the first tick is limited", "self\n            .last_tick\n            .map(|last| (now_secs - last).clamp(0.0, f64::MAX));", "Some(self.last_tick.map_or(0.0, |last| (now_secs - last).clamp(0.0, f64::MAX)));"),
+    ("time that goes back counts", ".clamp(0.0, self.stale_threshold)", ".clamp(f64::MIN, self.stale_threshold)"),
+    ("time that goes back counts by its size", "(now_secs - last).clamp(0.0, self.stale_threshold)", "(now_secs - last).abs().min(self.stale_threshold)"),
+    ("the first tick is limited", "self\n            .last_tick\n            .map(|last| (now_secs - last).clamp(0.0, self.stale_threshold));", "Some(self.last_tick.map_or(0.0, |last| (now_secs - last).clamp(0.0, self.stale_threshold)));"),
     ("rescaled by the wrong weight", ".fold(0.0, |m: f64, s| m.max(s.weight));", ".fold(f64::MAX, |m: f64, s| m.min(s.weight));"),
     ("the window preallocated", "buffer: VecDeque::new(),", "buffer: VecDeque::with_capacity(self.smooth_window),"),
     ("the speed limit direction flipped", "let sign = if delta > 0.0 { 1.0 } else { -1.0 };", "let sign = if delta > 0.0 { -1.0 } else { 1.0 };"),

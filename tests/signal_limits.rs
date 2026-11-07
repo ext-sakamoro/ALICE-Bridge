@@ -278,30 +278,40 @@ fn time_that_goes_back_or_stands_still_moves_nothing() {
                 "start {start} now {now}"
             );
         }
-        // from a position inside the range too, where a step back would show
+        // from a position inside the range too, where a step back would show: half a second a
+        // tick, up to 2
         let mut mid = standing_at_zero(1.0, start);
+        for k in 1..=4 {
+            let now = start + 0.5 * f64::from(k);
+            assert_eq!(
+                tick_towards(&mut mid, 1.0, now),
+                0.5 * f64::from(k),
+                "{start}"
+            );
+        }
         assert_eq!(
-            tick_towards(&mut mid, 1.0, start + 50.0),
-            50.0,
-            "start {start}"
-        );
-        assert_eq!(
-            tick_towards(&mut mid, 1.0, start + 47.0),
-            50.0,
+            tick_towards(&mut mid, 1.0, start - 1.0),
+            2.0,
             "start {start}"
         );
         // the tick after a step back counts from the time stepped back to
         assert_eq!(
-            tick_towards(&mut mid, 1.0, start + 48.0),
-            51.0,
+            tick_towards(&mut mid, 1.0, start - 0.5),
+            2.5,
             "start {start}"
         );
-        assert_eq!(
-            tick_towards(&mut mid, 1.0, start + 50.0),
-            53.0,
-            "start {start}"
-        );
+        assert_eq!(tick_towards(&mut mid, 1.0, start), 3.0, "start {start}");
     }
+}
+
+/// A bridge with a limit of 10 per second that has climbed to 100 by `top`, half a second a tick
+fn at_the_top(top: f64) -> SignalBridge {
+    let mut b = standing_at_zero(10.0, top - 10.0);
+    for k in 1..=20 {
+        tick_towards(&mut b, 1.0, top - 10.0 + 0.5 * f64::from(k));
+    }
+    assert_eq!(b.last_position(), 100.0);
+    b
 }
 
 // A clock that goes back does not hold the output until it catches up: limit 10 per second at
@@ -309,25 +319,21 @@ fn time_that_goes_back_or_stands_still_moves_nothing() {
 // there, whether the source sends 0 or stops and goes stale.
 #[test]
 fn a_clock_stepped_back_does_not_freeze_the_output() {
-    let at_the_top = |top: f64| {
-        let mut b = standing_at_zero(10.0, 0.0);
-        assert_eq!(tick_towards(&mut b, 1.0, top), 100.0);
-        b
-    };
     let mut b = at_the_top(3600.0);
     assert_eq!(tick_towards(&mut b, 0.0, 5.0), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 5.5), 95.0);
     assert_eq!(tick_towards(&mut b, 0.0, 6.0), 90.0);
-    assert_eq!(tick_towards(&mut b, 0.0, 8.0), 70.0);
 
-    // the source stops: it goes stale after half a second, and the fused value reads 0
+    // the source stops: it is stale once more than half a second old, and the fused value reads 0
     let mut b = at_the_top(3600.0);
     b.update("s", 1.0, 5.0).unwrap();
     assert_eq!(b.tick(5.0).unwrap().position, 100.0);
-    assert_eq!(b.tick(6.0).unwrap().position, 90.0);
+    assert_eq!(b.tick(5.5).unwrap().position, 100.0);
+    assert_eq!(b.tick(6.0).unwrap().position, 95.0);
 
     // a source still fed on the stepped-back clock stays active: it holds the output where it is
     let mut b = at_the_top(3600.0);
-    for now in [5.0, 6.0, 7.0] {
+    for now in [5.0, 5.5, 6.0] {
         assert_eq!(tick_towards(&mut b, 1.0, now), 100.0, "{now}");
     }
     assert_eq!(b.active_sources(), ["s"]);
@@ -335,15 +341,28 @@ fn a_clock_stepped_back_does_not_freeze_the_output() {
     // one tick far ahead by mistake freezes nothing either
     let mut b = at_the_top(100.0);
     assert_eq!(tick_towards(&mut b, 1.0, 12_000.0), 100.0);
-    assert_eq!(tick_towards(&mut b, 0.0, 101.0), 100.0);
-    assert_eq!(tick_towards(&mut b, 0.0, 102.0), 90.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 100.5), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 101.0), 95.0);
+}
+
+// oracle: a tick spends at most half a second (the time after which a source is stale), so a gap
+// of an hour moves limit / 2, and a caller that ticks every half second or faster is not affected
+#[test]
+fn one_tick_spends_at_most_half_a_second() {
+    let mut b = standing_at_zero(10.0, 0.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 3600.0), 5.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 3600.5), 10.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 3600.75), 12.5);
+    let mut b = standing_at_zero(10.0, 0.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 0.5), 5.0);
 }
 
 #[test]
 fn the_limit_holds_in_both_directions() {
     let mut b = standing_at_zero(1.0, 1.0);
-    assert_eq!(tick_towards(&mut b, 1.0, 51.0), 50.0);
-    assert_eq!(tick_towards(&mut b, 0.0, 53.0), 48.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 1.5), 0.5);
+    assert_eq!(tick_towards(&mut b, 1.0, 2.0), 1.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 2.5), 0.5);
 }
 
 #[test]

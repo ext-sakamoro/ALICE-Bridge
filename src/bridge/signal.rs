@@ -52,6 +52,10 @@ impl core::fmt::Display for SignalError {
 
 impl std::error::Error for SignalError {}
 
+/// How long a source's last value counts, in seconds, and the most time one tick may spend under the
+/// speed limit
+pub const STALE_THRESHOLD_SECS: f64 = 0.5;
+
 /// Real-time signal processor between input sources and device output.
 ///
 /// Supports any number of named input sources with configurable weights.
@@ -97,7 +101,7 @@ impl SignalBridge {
             last_position: f64::midpoint(min_position, max_position),
             last_tick: None,
             tick_count: 0,
-            stale_threshold: 0.5,
+            stale_threshold: STALE_THRESHOLD_SECS,
         })
     }
 
@@ -156,6 +160,10 @@ impl SignalBridge {
     /// The first tick has no time to measure a speed over and goes to the target; an infinite limit
     /// always does.
     ///
+    /// A tick spends at most [`STALE_THRESHOLD_SECS`] (the time after which a source is stale), so a
+    /// long gap does not move the whole distance at once. A caller that ticks less often than that
+    /// moves slower than `speed_limit`.
+    ///
     /// # Errors
     ///
     /// [`SignalError::NotFinite`] for a time that is not finite.
@@ -165,10 +173,10 @@ impl SignalBridge {
         }
         // no earlier tick: no time to measure a speed over. A time that goes back gives nothing to
         // spend, and the next tick counts from it, so a clock stepped back does not hold the output
-        // until it catches up. The difference of two finite times can be infinite, hence the clamp.
+        // until it catches up. At most the stale threshold is spent, so a long gap moves a little.
         let elapsed = self
             .last_tick
-            .map(|last| (now_secs - last).clamp(0.0, f64::MAX));
+            .map(|last| (now_secs - last).clamp(0.0, self.stale_threshold));
         self.last_tick = Some(now_secs);
 
         // Mark stale sources
