@@ -151,9 +151,10 @@ impl SignalBridge {
 
     /// Generate the next device action. The position is finite and within the range.
     ///
-    /// The position moves at most `speed_limit` for each second past the latest tick, so a time
-    /// that stands still or goes back moves nothing. The first tick has no time to measure a speed
-    /// over and goes to the target; an infinite limit always does.
+    /// The position moves at most `speed_limit` for each second since the tick before, so a time
+    /// that stands still or goes back moves nothing, and the tick after it counts from that time.
+    /// The first tick has no time to measure a speed over and goes to the target; an infinite limit
+    /// always does.
     ///
     /// # Errors
     ///
@@ -162,13 +163,13 @@ impl SignalBridge {
         if !now_secs.is_finite() {
             return Err(SignalError::NotFinite);
         }
-        // no earlier tick: no time to measure a speed over. Time past the latest tick is the only
-        // time there is to spend, and it is clamped since the difference of two finite times can
-        // be infinite
+        // no earlier tick: no time to measure a speed over. A time that goes back gives nothing to
+        // spend, and the next tick counts from it, so a clock stepped back does not hold the output
+        // until it catches up. The difference of two finite times can be infinite, hence the clamp.
         let elapsed = self
             .last_tick
             .map(|last| (now_secs - last).clamp(0.0, f64::MAX));
-        self.last_tick = Some(self.last_tick.map_or(now_secs, |last| last.max(now_secs)));
+        self.last_tick = Some(now_secs);
 
         // Mark stale sources
         for src in &mut self.sources {

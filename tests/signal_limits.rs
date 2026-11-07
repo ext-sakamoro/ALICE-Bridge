@@ -290,10 +290,53 @@ fn time_that_goes_back_or_stands_still_moves_nothing() {
             50.0,
             "start {start}"
         );
-        // going back gave no time to spend: only time past the latest one counts
-        assert_eq!(tick_towards(&mut b, 1.0, start + 0.5), 0.5, "start {start}");
-        assert_eq!(tick_towards(&mut b, 1.0, start + 2.0), 2.0, "start {start}");
+        // the tick after a step back counts from the time stepped back to
+        assert_eq!(
+            tick_towards(&mut mid, 1.0, start + 48.0),
+            51.0,
+            "start {start}"
+        );
+        assert_eq!(
+            tick_towards(&mut mid, 1.0, start + 50.0),
+            53.0,
+            "start {start}"
+        );
     }
+}
+
+// A clock that goes back does not hold the output until it catches up: limit 10 per second at
+// position 100, the clock falls from 3600 to 5, and the output comes down at 10 per second from
+// there, whether the source sends 0 or stops and goes stale.
+#[test]
+fn a_clock_stepped_back_does_not_freeze_the_output() {
+    let at_the_top = |top: f64| {
+        let mut b = standing_at_zero(10.0, 0.0);
+        assert_eq!(tick_towards(&mut b, 1.0, top), 100.0);
+        b
+    };
+    let mut b = at_the_top(3600.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 5.0), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 6.0), 90.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 8.0), 70.0);
+
+    // the source stops: it goes stale after half a second, and the fused value reads 0
+    let mut b = at_the_top(3600.0);
+    b.update("s", 1.0, 5.0).unwrap();
+    assert_eq!(b.tick(5.0).unwrap().position, 100.0);
+    assert_eq!(b.tick(6.0).unwrap().position, 90.0);
+
+    // a source still fed on the stepped-back clock stays active: it holds the output where it is
+    let mut b = at_the_top(3600.0);
+    for now in [5.0, 6.0, 7.0] {
+        assert_eq!(tick_towards(&mut b, 1.0, now), 100.0, "{now}");
+    }
+    assert_eq!(b.active_sources(), ["s"]);
+
+    // one tick far ahead by mistake freezes nothing either
+    let mut b = at_the_top(100.0);
+    assert_eq!(tick_towards(&mut b, 1.0, 12_000.0), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 101.0), 100.0);
+    assert_eq!(tick_towards(&mut b, 0.0, 102.0), 90.0);
 }
 
 #[test]
