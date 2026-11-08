@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- CI: 公開する文面の検査 (`Public text` workflow、`scripts/public_text.sh`) を追加 ALICE-Law の `scripts/public_text_check.py` を `.github/public-text-pin` の revision で取得し、SHA-256 が一致した時だけ使って、HEAD の全 tracked file (path と本文) と送った commit (message・追加行・追加 path) を読む 何も比較できなければ失敗する preflight でも走る
+
 ### Fixed
 - `SignalBridge::tick`: 時刻が戻った時や止まった時に速度制限が効かず一気に動いていた 制限に使う時間は 1 つ前の tick から進んだ分だけにし、時刻が戻った tick は動かず次はそこから数える 1 tick で使う時間は STALE_THRESHOLD_SECS (0.5 秒) までで、長い間が空いても 1 tick で全距離を動かない これより間隔の長い呼び出し元は speed_limit より遅く動く 時計が 0 以下でも制限が効き、最初の tick だけ制限なしで目標へ動く `speed_limit` が無限大なら常に制限なし
 - `SignalBridge`: 重みの合計が 1e-10 未満だと全部 0 扱いになり出力が `min` に落ちていた 重みが全部ちょうど 0 の時だけ平均なしとする 重みの合計が overflow する時の平均は、逆数を掛ける形から最大の重みで割る形に変えたので下位の bit が変わる
